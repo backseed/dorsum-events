@@ -6,23 +6,28 @@ require "redis"
 module Dorsum
   class Events
     class Source
-      STREAM = "distantcacophony"
-
-      def initialize(@io : IO, @last_event_id : (String | Nil))
-        Log.info { "Events starting at #{@last_event_id}" } if @last_event_id
+      def initialize(@stream : String, @io : IO, @last_event_id : (String | Nil))
+        Log.info { "Starting SSE for stream #{@stream}" }
         @redis = Redis.new
       end
 
       def stream
         loop do
-          start = @last_event_id ? @last_event_id : "0-0"
-          stream_streams(
-            @redis.command([
-              "XREAD",
-              "BLOCK", "5000",
-              "STREAMS", STREAM, start,
-            ]).as(Array(Redis::RedisValue))
-          )
+          if @last_event_id
+            stream_streams(
+              @redis.command([
+                "XREAD",
+                "BLOCK", "5000",
+                "STREAMS", @stream, @last_event_id,
+              ]).as(Array(Redis::RedisValue))
+            )
+          else
+            stream_events(
+              @redis.command(
+                ["XREVRANGE", @stream, "+", "-", "COUNT", "64"]
+              ).as(Array(Redis::RedisValue)).reverse
+            )
+          end
         end
       end
 
@@ -59,18 +64,11 @@ module Dorsum
       def call(context)
         request = context.request
         path = context.request.path
-        if acceptable_request?(request)
+        if path =~ /^\/([\w]+)$/
           handle_request(request, context.response)
-        elsif path =~ /^\/([\w]+)$/
-          context.request.path = "/index.html"
-          @static_handler.call(context)
         else
           call_next(context)
         end
-      end
-
-      private def acceptable_request?(request)
-        request.headers["Accept"]? == "text/event-stream"
       end
 
       private def handle_request(request, response)
@@ -78,17 +76,20 @@ module Dorsum
         response.headers["Cache-Control"] = "no-cache"
         response.headers["Connection"] = "keep-alive"
         response.upgrade do |io|
-          Source.new(io, last_event_id(request)).stream
+          Source.new(stream(request), io, last_event_id(request)).stream
           io.close
         end
       end
 
+      private def stream(request)
+        request.path.split("/")[1]
+      end
+
       private def last_event_id(request)
         return request.headers["Last-Event-ID"] if request.headers["Last-Event-ID"]?
-        pp request.query_params
         return request.query_params["last-event-id"] if request.query_params["last-event-id"]?
 
-        "0-0"
+        nil
       end
     end
   end
