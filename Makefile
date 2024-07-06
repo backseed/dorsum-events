@@ -3,15 +3,15 @@ all: dorsum-events
 lib:
 	shards
 
-spec: lib main.cr src/**/*.cr
+spec: lib main.cr
 	crystal spec
 
-dorsum-events: lib main.cr src/**/*.cr
+dorsum-events: lib main.cr
 	crystal build --error-trace -o dorsum-events main.cr
 	@strip dorsum-events
 	@du -sh dorsum-events
 
-release: lib main.cr src/**/*.cr
+release: lib main.cr
 	crystal build --release -o dorsum-events main.cr
 	@strip dorsum-events
 	@du -sh dorsum-events
