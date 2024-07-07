@@ -5,13 +5,32 @@ require "redis"
 
 module Dorsum
   class Events
+    class Stream
+      def initialize(@redis : Redis::PooledClient, @request : HTTP::Request)
+      end
+
+      def exist?
+        Redis.new.exists(name) == 1
+      end
+
+      def name
+        @request.path.split("/")[1]
+      end
+
+      def last_event_id
+        return @request.headers["Last-Event-ID"] if @request.headers["Last-Event-ID"]?
+        return @request.query_params["last-event-id"] if @request.query_params["last-event-id"]?
+
+        nil
+      end
+    end
+
     class Source
-      def initialize(@stream : String, @io : IO, @last_event_id : (String | Nil))
-        Log.info { "Starting SSE for stream #{@stream}" }
-        @redis = Redis.new
+      def initialize(@redis : Redis::PooledClient, @stream : String, @io : IO, @last_event_id : (String | Nil))
       end
 
       def stream
+        Log.info { "Starting SSE for stream `#{@stream}'" }
         loop do
           if @last_event_id
             stream_streams(
@@ -28,6 +47,8 @@ module Dorsum
               ).as(Array(Redis::RedisValue)).reverse
             )
           end
+          # We don't want to hog the CPU when there are no events to steam.
+          sleep 2.seconds
         end
       end
 
@@ -59,6 +80,7 @@ module Dorsum
 
       def initialize
         @static_handler = HTTP::StaticFileHandler.new("public", false, true)
+        @redis = Redis::PooledClient.new
       end
 
       def call(context)
@@ -72,24 +94,18 @@ module Dorsum
       end
 
       private def handle_request(request, response)
-        response.content_type = "text/event-stream"
-        response.headers["Cache-Control"] = "no-cache"
-        response.headers["Connection"] = "keep-alive"
-        response.upgrade do |io|
-          Source.new(stream(request), io, last_event_id(request)).stream
-          io.close
+        stream = Stream.new(@redis, request)
+        if stream.exist?
+          response.content_type = "text/event-stream"
+          response.headers["Cache-Control"] = "no-cache"
+          response.headers["Connection"] = "keep-alive"
+          response.upgrade do |io|
+            Source.new(@redis, stream.name, io, stream.last_event_id).stream
+            io.close
+          end
+        else
+          response.respond_with_status(HTTP::Status::NOT_FOUND)
         end
-      end
-
-      private def stream(request)
-        request.path.split("/")[1]
-      end
-
-      private def last_event_id(request)
-        return request.headers["Last-Event-ID"] if request.headers["Last-Event-ID"]?
-        return request.query_params["last-event-id"] if request.query_params["last-event-id"]?
-
-        nil
       end
     end
   end
