@@ -27,3 +27,15 @@ Will translate to an SSE that looks something like this:
 ## Future
 
 * Automated trimming and using XRANGE with COUNT on requests without a last-event-id to keep performance acceptable.
+
+## Setup
+
+Setting up is probably easiest in Caddy.
+
+```
+example.com {
+  proxy / http://localhost:9110 {
+    flush_interval -1 # turn off request buffering
+  }
+}
+```
