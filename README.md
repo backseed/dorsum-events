@@ -30,12 +30,15 @@ Will translate to an SSE that looks something like this:
 
 ## Setup
 
-Setting up is probably easiest in Caddy.
+Setting up is probably easiest in Caddy:
 
 ```
 example.com {
-  proxy / http://localhost:9110 {
-    flush_interval -1 # turn off request buffering
-  }
+	@events header Accept text/event-stream
+	handle @events {
+			reverse_proxy 127.0.0.1:9110
+	}
 }
 ```
+
+Caddy will automatically turn off response buffering when it detects the `text/event-stream` content-type. Turning on gzip or other output filters will enable response buffering and break SSE streaming, so be careful.
