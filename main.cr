@@ -114,7 +114,6 @@ end
 server = HTTP::Server.new([
   HTTP::LogHandler.new,
   Dorsum::Events::Handler.new,
-  HTTP::StaticFileHandler.new("public", false, false),
 ])
 address = server.bind_tcp 9110
 Log.info { "Listening on http://#{address}" }
