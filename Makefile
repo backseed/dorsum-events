@@ -17,6 +17,9 @@ release: lib main.cr
 	@du -sh dorsum-events
 
 clean:
+	rm -rf dorsum-events *.dwarf
+
+realclean:
 	rm -rf .crystal dorsum-events .deps .shards libs lib *.dwarf build
 
 PREFIX ?= /usr/local
